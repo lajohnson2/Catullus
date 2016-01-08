@@ -1,0 +1,277 @@
+# Catullus.R
+# Contains the majority of the code used in this project
+setwd("~/OneDrive/OD_Documents/Hacking the Humanist/Final Paper")
+
+# Import the libraries that I will need
+library(rvest)
+library(magrittr)
+
+# Get full english version of the poems:
+cateng_xml<-read_html("CatullusEnglish.xml")
+eng.v<-html_nodes(cateng_xml,"div1") %>%
+  html_text(trim = TRUE) 
+for (i in 1:3){
+  eng.v<-eng.v[-19]
+}
+View(eng.v)
+# Have all as one file for searching purposes:
+catall_eng<-paste(1:117, eng.v, sep=" ", collapse = "\n") %>%
+  write(.,"catall_eng.txt")
+
+# Write them to files:
+for (i in 1:length(eng.v)) {
+  num<-i  
+  num<-i 
+  if (i==15){
+    num<-"14b"
+  } 
+  if (i>15){
+    num<-i-1
+  }
+  if (num== 2||num==3||num==5||num==6||num==8||num==11||num==36
+      ||num==37||num==51||num==58||num==68||num==70||num==72||num==75
+      ||num==76||num==79||num==83||num==85||num==86||num==87||num==91
+      ||num==92||num==104||num==107||num==109) {
+    setwd("~/OneDrive/OD_Documents/Hacking the Humanist/Final Paper/Lesbia")
+    lesbia<-paste(num,".txt", sep="")
+    write(eng.v[i],lesbia)
+  }
+  setwd("~/OneDrive/OD_Documents/Hacking the Humanist/Final Paper/corpus")
+  curr<-paste(num, ".txt", sep="")
+  write(eng.v[i],curr)
+}
+setwd("~/OneDrive/OD_Documents/Hacking the Humanist/Final Paper")
+
+# Get latin version of the poems
+catlat_xml<-read_html("CatullusLatin.xml")
+latin.v<-html_nodes(catlat_xml,"div2") %>%
+  html_text(trim = TRUE) 
+View(latin.v)
+# Have all as one file for searching purposes:
+catall_lat<-paste(1:117, eng.v, sep=" ", collapse = "\n") %>%
+  write(.,"catall_lat.txt")
+
+# Write them to files:
+setwd("~/OneDrive/OD_Documents/Hacking the Humanist/Final Paper/Latin Poems")
+for (i in 1:length(latin.v)) {
+  num<-i 
+  if (i==15){
+    num<-"14b"
+  } 
+  if (i>15){
+    num<-i-1
+  }
+  curr<-paste(num, ".txt", sep="")
+  write(latin.v[i],curr)
+}
+setwd("~/OneDrive/OD_Documents/Hacking the Humanist/Final Paper")
+
+#-----------------------------------------------------
+##### MANIPULATION:
+
+# word frequencies
+
+library("tm")
+library(magrittr)
+
+catcorpus<-Corpus(DirSource("corpus"))
+# Remove "filler" works
+catremov<-tm_map(catcorpus, removeWords, stopwords("SMART"))
+
+catcorpus<-tm_map(catcorpus, removePunctuation)
+catcorpus<-tm_map(catcorpus, content_transformer(tolower))
+catullus.dtm <- DocumentTermMatrix(catremov)
+rownames(catullus.dtm)<-c(1,10,100:109,11,110:119,12,120,13:19,2,20:29,
+                          3,30:39,4,40:49,5,50:59,6,60:69,7,70:79,8,
+                          80:89,9,90:99)
+
+# Frequent terms:
+catfreqterms.eng<-findFreqTerms(catullus.dtm, lowfreq=15, highfreq= Inf)
+freqs<-c()
+for (i in 1:length(catfreqterms.eng)){
+  currword<-catfreqterms.eng[i]
+  col<-which(colnames(catullus.dtm)==currword)
+  currval<-sum(catullus.dtm[,col])
+  freqs<-c(freqs,currval)
+}
+catfreqterms.eng<-cbind(catfreqterms.eng,freqs) 
+
+
+#-----------------------------------------------------
+##### CLUSTERING: 
+# Works Cited:
+# http://www.statmethods.net/advstats/cluster.html
+# Colors from: http://www.stat.columbia.edu/~tzheng/files/Rcolor.pdf
+
+source('Rtools.R') # our tools: using getcorpus() below
+library(cluster) #for clusplot()
+library(fpc) #for entroid plot [plotcluster()] & comparing
+
+colors<-c("darkolivegreen1","darkorchid","aquamarine4","deeppink","mediumorchid4")
+
+#-----------
+## ENGLISH:
+eng<-getcorpus("corpus")
+
+# counts and freqs
+eng.counts.l<-lapply(eng,table) # raw counts
+eng.relfreq.l<-lapply(eng.counts.l,prop.table) # relative freqs
+
+# convert list of frequency tables to a list of dataframes
+eng.df.l<-mapply(data.frame,
+                 ID=names(eng),
+                 eng.relfreq.l, SIMPLIFY=FALSE,
+                 MoreArgs=list(stringsAsFactors=FALSE)) # I still get factors when I run this mapply
+
+# convert to matrix
+# first bind all dataframes in the lists into a single dataframe
+songfreqs.df<-do.call(rbind,eng.df.l)
+rownames(songfreqs.df)<-NULL
+
+# convert to a wide-form table
+result<-xtabs(Freq ~ ID+Var1,data=songfreqs.df)
+
+# convert xtabs table to a matrix
+eng.m<-apply(result,2,as.numeric)
+engreduced.m<-eng.m[,apply(eng.m,2,mean)>=.0025]
+
+### Clustering!
+dm<-dist(engreduced.m) 
+cluster<-hclust(dm)
+cluster$labels<-names(eng.relfreq.l)
+plot(cluster,cex=.8)
+groups<-cutree(cluster,k=11) #cut tree into clusters
+rect.hclust(cluster,k=11, border=colors[2])
+
+# K-Means Clustering with 5 clusters
+fit <- kmeans(engreduced.m, 10)
+# Cluster Plot against 1st 2 principal components
+# vary parameters for most readable graph
+clusplot(engreduced.m, fit$cluster, 
+         col.p=colors[4],
+         col.clus=colors[2:5],
+         color=T, shade=T, 
+         labels=2, lines=0)
+## zoom in :
+rect(0,-1, 2,1, border = "orange", lwd=2)
+clusplot(engreduced.m, fit$cluster, color = T, 
+         xlim = c(-1,1), ylim = c(-1,1), labels=2)
+box(col="orange",lwd=2); mtext("Eng sub region", font = 3, cex = 2)
+# ##  or zoom out :
+# clusplot(iris.x, cl3, color = TRUE, xlim = c(-4,4), ylim = c(-4,4))
+# mtext("`super' region", font = 4, cex = 2)
+# rect(U[1],U[3], U[2],U[4], lwd=2, lty = 3)
+
+# Centroid Plot against 1st 2 discriminant functions
+plotcluster(engreduced.m, fit$cluster)
+title("English Centroid Plot")
+
+## A different type of clustering using stylo:
+# stylo package
+library("stylo")
+engstylo<-stylo(gui=FALSE)
+
+
+
+#----------------
+## JUST LESBIA:
+les<-getcorpus("Lesbia")
+
+# counts and freqs
+les.counts.l<-lapply(les,table) # raw counts
+les.relfreq.l<-lapply(les.counts.l,prop.table) # relative freqs
+
+# convert list of frequency tables to a list of dataframes
+les.df.l<-mapply(data.frame,
+                 ID=names(les),
+                 les.relfreq.l, SIMPLIFY=FALSE,
+                 MoreArgs=list(stringsAsFactors=FALSE)) # I still get factors when I run this mapply
+
+# convert to matrix
+# first bind all dataframes in the lists into a single dataframe
+songfreqs.df<-do.call(rbind,les.df.l)
+rownames(songfreqs.df)<-NULL
+
+# convert to a wide-form table
+result<-xtabs(Freq ~ ID+Var1,data=songfreqs.df)
+
+# convert xtabs table to a matrix
+les.m<-apply(result,2,as.numeric)
+lesreduced.m<-les.m[,apply(les.m,2,mean)>=.0025]
+
+### Clustering!
+dm<-dist(lesreduced.m) 
+cluster2<-hclust(dm)
+cluster2$labels<-names(les.relfreq.l)
+plot(cluster2,cex=.8)
+groups<-cutree(cluster2,k=5) #cut tree into clusters
+rect.hclust(cluster2,k=5, border="purple")
+
+# # K-Means Clustering with clusters
+# fit2 <- kmeans(lesreduced.m, 2)
+# # Cluster Plot against 1st 2 principal components
+# # vary parameters for most readable graph
+# clusplot(lesreduced.m, fit2$cluster, 
+#          col.p=colors[4],
+#          color=T, shade=T, 
+#          labels=2, lines=0)
+# # Centroid Plot against 1st 2 discriminant functions
+# plotcluster(lesreduced.m, fit2$cluster)
+# title("Lesbia Poems Centroid Plot")
+
+#----------
+## LATIN:
+latin<-getcorpus("Latin Poems")
+
+# counts and freqs
+latin.counts.l<-lapply(latin,table) # raw counts
+latin.relfreq.l<-lapply(latin.counts.l,prop.table) # relative freqs
+
+# convert list of frequency tables to a list of dataframes
+latin.df.l<-mapply(data.frame,
+                   ID=names(latin),
+                   latin.relfreq.l, SIMPLIFY=FALSE,
+                   MoreArgs=list(stringsAsFactors=FALSE)) # I still get factors when I run this mapply
+
+# convert to matrix
+# first bind all dataframes in the lists into a single dataframe
+songfreqs.df<-do.call(rbind,latin.df.l)
+rownames(songfreqs.df)<-NULL
+
+# convert to a wide-form table
+result<-xtabs(Freq ~ ID+Var1,data=songfreqs.df)
+
+# convert xtabs table to a matrix
+latin.m<-apply(result,2,as.numeric)
+latinreduced.m<-latin.m[,apply(latin.m,2,mean)>=.0025]
+
+### Clustering!
+dm<-dist(latinreduced.m)
+cluster3<-hclust(dm)
+cluster3$labels<-names(latin.relfreq.l)
+plot(cluster3,cex=.8)
+groups<-cutree(cluster3,k=11) #cut tree into clusters
+rect.hclust(cluster3,k=11, border=colors[3])
+
+# K-Means Clustering with 5 clusters
+fit3 <- kmeans(latinreduced.m, 10)
+# Cluster Plot against 1st 2 principal components
+# vary parameters for most readable graph
+clusplot(latinreduced.m, fit3$cluster, 
+         col.p=colors[4],
+         col.clus=colors[2:5],
+         color=T, shade=T, 
+         labels=2, lines=0)
+## zoom in :
+rect(0,-1, 2,1, border = "orange", lwd=2)
+clusplot(latinreduced.m, fit3$cluster, color = T, 
+         xlim = c(-1,1), ylim = c(-1,1), labels=2)
+box(col="orange",lwd=2); mtext("Latin sub region", font = 3, cex = 2)
+# ##  or zoom out :
+# clusplot(iris.x, cl3, color = TRUE, xlim = c(-4,4), ylim = c(-4,4))
+# mtext("`super' region", font = 4, cex = 2)
+# rect(U[1],U[3], U[2],U[4], lwd=2, lty = 3)
+
+# Centroid Plot against 1st 2 discriminant functions
+plotcluster(latinreduced.m, fit3$cluster)
+title("Latin Centroid Plot")
